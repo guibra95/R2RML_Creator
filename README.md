@@ -48,4 +48,4 @@ Genera mapeos R2RML de calidad a partir de bases de datos MySQL mediante una int
 - Asegúrate de que tu base de datos MySQL sea accesible desde el contenedor Docker si usas Docker (puedes usar `host.docker.internal` como host en Windows).
 
 ## Licencia
-MIT
+Sin licencia: este proyecto es de uso libre para cualquier persona.
