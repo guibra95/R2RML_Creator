@@ -45,7 +45,6 @@ Genera mapeos R2RML de calidad a partir de bases de datos MySQL mediante una int
 - `output/` — Archivos R2RML generados
 
 ## Notas
-- El proyecto no incluye ya ninguna funcionalidad de creación de ontologías.
 - Asegúrate de que tu base de datos MySQL sea accesible desde el contenedor Docker si usas Docker (puedes usar `host.docker.internal` como host en Windows).
 
 ## Licencia
