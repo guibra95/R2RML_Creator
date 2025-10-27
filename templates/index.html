@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>R2RML MySQL Connector</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; }
+        h1 { color: #333; text-align: center; }
+        input, button, select { width: 100%; padding: 10px; margin: 5px 0; box-sizing: border-box; }
+        button { background-color: #007cba; color: white; border: none; cursor: pointer; border-radius: 4px; }
+        button:hover { background-color: #005a87; }
+        .result { margin-top: 15px; padding: 10px; border-radius: 4px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .step { display: none; }
+        .step.active { display: block; }
+        .table-selector { margin: 10px 0; }
+        .column-row { 
+            display: flex; 
+            align-items: center; 
+            margin: 10px 0; 
+            padding: 10px; 
+            background: #f8f9fa; 
+            border-radius: 4px; 
+        }
+        .column-name { flex: 1; font-weight: bold; }
+        .column-ontology-type { flex: 1; margin: 0 10px; }
+        .column-pk { margin-left: 10px; }
+        .column-header { 
+            display: flex; 
+            font-weight: bold; 
+            margin-bottom: 10px; 
+            padding: 10px; 
+            background: #e9ecef; 
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Paso 1: Conexión MySQL -->
+        <div id="step1" class="step active">
+            <h1>🗄️ Paso 1: Conexión MySQL</h1>
+            
+            <input type="text" id="host" placeholder="Host" value="host.docker.internal">
+            <input type="number" id="port" placeholder="Puerto" value="3306">
+            <input type="text" id="user" placeholder="Usuario" value="root">
+            <input type="password" id="password" placeholder="Contraseña">
+            <input type="text" id="database" placeholder="Base de datos" value="mimic">
+            
+            <button onclick="connectMySQL()">Conectar a MySQL</button>
+            
+            <div id="connection-result"></div>
+        </div>
+
+        <!-- Paso 2: Selección de tabla -->
+        <div id="step2" class="step">
+            <h1>📋 Paso 2: Selección de Tabla</h1>
+            
+            <div class="table-selector">
+                <label for="table-select"><strong>Selecciona una tabla:</strong></label>
+                <select id="table-select"></select>
+            </div>
+            
+            <button onclick="selectTable()">Siguiente: Ver Columnas</button>
+            <button onclick="goToStep(1)" style="background-color: #6c757d;">← Volver</button>
+        </div>
+
+        <!-- Paso 3: Asignacion de las URIs y configuración de columnas -->
+
+        <div style="margin: 20px 0;">
+            <label><strong>URI de Diccionario:</strong></label>
+            <input type="text" id="uri-diccionario" placeholder="Ej: http://ejemplo.org/ontologia#">
+            <label><strong>URI de Datos:</strong></label>
+            <input type="text" id="uri-datos" placeholder="Ej: http://ejemplo.org/datos/">
+        </div>
+
+        <div id="step3" class="step">
+            <h1>⚙️ Paso 3: Configuración de Columnas</h1>
+            
+            <div id="table-info"></div>
+            <div id="columns-config"></div>
+            
+            <button onclick="saveConfiguration()">Generar R2RML</button>
+            <button onclick="goToStep(2)" style="background-color: #6c757d;">← Volver</button>
+        </div>
+
+        <!-- Paso 4: R2RML Generado -->
+        <div id="step4" class="step">
+            <h1>🎉 Paso 4: R2RML Generado</h1>
+            
+            <div id="r2rml-info"></div>
+            <div id="r2rml-content" style="background: #f8f9fa; padding: 15px; border-radius: 4px; margin: 10px 0;">
+                <pre id="r2rml-code" style="white-space: pre-wrap; font-family: monospace; font-size: 12px;"></pre>
+            </div>
+            
+            <button onclick="downloadR2RML()" style="background-color: #28a745;">📥 Descargar Archivo R2RML</button>
+            <button onclick="goToStep(1)" style="background-color: #6c757d;">🔄 Nueva Configuración</button>
+        </div>
+    </div>
+
+    <script>
+        let connectionData = {};
+        let currentTables = [];
+        let currentColumns = [];
+
+        function connectMySQL() {
+            connectionData = {
+                host: document.getElementById('host').value,
+                port: document.getElementById('port').value,
+                user: document.getElementById('user').value,
+                password: document.getElementById('password').value,
+                database: document.getElementById('database').value
+            };
+
+            fetch('/mysql_test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(connectionData)
+            })
+            .then(response => response.json())
+            .then(result => {
+                const resultDiv = document.getElementById('connection-result');
+                
+                if (result.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `✅ ${result.message}`;
+                    
+                    if (result.tables && result.tables.length > 0) {
+                        currentTables = result.tables;
+                        populateTableSelector();
+                        goToStep(2);
+                    }
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `❌ ${result.error}<br><small>${result.details || ''}</small>`;
+                }
+            })
+            .catch(error => {
+                const resultDiv = document.getElementById('connection-result');
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `❌ Error: ${error}`;
+            });
+        }
+
+        function populateTableSelector() {
+            const select = document.getElementById('table-select');
+            select.innerHTML = '<option value="">Selecciona una tabla...</option>';
+            
+            currentTables.forEach(table => {
+                const option = document.createElement('option');
+                option.value = table;
+                option.textContent = table;
+                select.appendChild(option);
+            });
+        }
+
+        function selectTable() {
+            const selectedTable = document.getElementById('table-select').value;
+            if (!selectedTable) {
+                alert('Por favor selecciona una tabla');
+                return;
+            }
+
+            const requestData = {
+                ...connectionData,
+                table_name: selectedTable
+            };
+
+            fetch('/get_table_columns', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestData)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    currentColumns = result.columns;
+                    showColumnConfiguration(selectedTable, result.columns);
+                    goToStep(3);
+                } else {
+                    alert(`Error: ${result.error}`);
+                }
+            })
+            .catch(error => {
+                alert(`Error: ${error}`);
+            });
+        }
+
+        function showColumnConfiguration(tableName, columns) {
+            const tableInfo = document.getElementById('table-info');
+            tableInfo.innerHTML = `<h3>Tabla: ${tableName}</h3>`;
+            
+            const configDiv = document.getElementById('columns-config');
+            
+            let html = '<div class="column-header">';
+            html += '<div class="column-name">Columna (Tipo MySQL)</div>';
+            html += '<div class="column-ontology-type">Tipo Ontología</div>';
+            html += '<div class="column-pk">PK</div>';
+            html += '</div>';
+            
+            columns.forEach((col, index) => {
+                html += `<div class="column-row">
+                    <div class="column-name">${col.name} <small>(${col.type})</small></div>
+                    <select class="column-ontology-type" id="ontology-type-${index}">
+                        <option value="string">String</option>
+                        <option value="integer">Integer</option>
+                        <option value="float">Float</option>
+                        <option value="boolean">Boolean</option>
+                        <option value="date">Date</option>
+                        <option value="datetime">DateTime</option>
+                    </select>
+                    <div class="column-pk">
+                        <input type="checkbox" id="pk-${index}" ${col.key === 'PRI' ? 'checked' : ''}>
+                        <label for="pk-${index}">PK</label>
+                    </div>
+                </div>`;
+            });
+            
+            configDiv.innerHTML = html;
+            
+            // Auto-detectar tipos basado en MySQL
+            columns.forEach((col, index) => {
+                const select = document.getElementById(`ontology-type-${index}`);
+                const mysqlType = col.type.toLowerCase();
+                
+                if (mysqlType.includes('int') || mysqlType.includes('tinyint') || mysqlType.includes('bigint')) {
+                    select.value = 'integer';
+                } else if (mysqlType.includes('float') || mysqlType.includes('double') || mysqlType.includes('decimal')) {
+                    select.value = 'float';
+                } else if (mysqlType.includes('date') && !mysqlType.includes('time')) {
+                    select.value = 'date';
+                } else if (mysqlType.includes('datetime') || mysqlType.includes('timestamp')) {
+                    select.value = 'datetime';
+                } else if (mysqlType.includes('tinyint(1)')) {
+                    select.value = 'boolean';
+                }
+            });
+        }
+
+        function saveConfiguration() {
+            const config = {
+                table: document.getElementById('table-select').value,
+                columns: []
+            };
+            
+            currentColumns.forEach((col, index) => {
+                const ontologyType = document.getElementById(`ontology-type-${index}`).value;
+                const isPK = document.getElementById(`pk-${index}`).checked;
+                
+                config.columns.push({
+                    name: col.name,
+                    mysqlType: col.type,
+                    ontologyType: ontologyType,
+                    isPrimaryKey: isPK
+                });
+            });
+            
+            const uriDiccionario = document.getElementById('uri-diccionario').value;
+            const uriDatos = document.getElementById('uri-datos').value;
+
+            // Enviar configuración al servidor para generar R2RML
+            fetch('/generate_r2rml', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    config: config,
+                    uri_diccionario: uriDiccionario,
+                    uri_datos: uriDatos
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    // Mostrar el resultado
+                    showR2RMLResult(result);
+                    goToStep(4);
+                } else {
+                    alert(`Error generando R2RML: ${result.error}`);
+                }
+            })
+            .catch(error => {
+                alert(`Error: ${error}`);
+            });
+        }
+
+        function showR2RMLResult(result) {
+            const infoDiv = document.getElementById('r2rml-info');
+            const codeDiv = document.getElementById('r2rml-code');
+            
+            infoDiv.innerHTML = `
+                <div class="result success">
+                    <strong>✅ ${result.message}</strong>
+                    <p>El archivo R2RML ha sido generado y guardado en el servidor.</p>
+                    <p><strong>Archivo:</strong> ${result.message.split(': ')[1]}</p>
+                </div>
+            `;
+            
+            codeDiv.textContent = result.content;
+            
+            // Guardar contenido para descarga
+            window.currentR2RML = {
+                content: result.content,
+                filename: result.message.split(': ')[1]
+            };
+        }
+
+        function downloadR2RML() {
+            if (!window.currentR2RML) {
+                alert('No hay contenido R2RML para descargar');
+                return;
+            }
+            
+            const blob = new Blob([window.currentR2RML.content], { type: 'text/turtle' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = window.currentR2RML.filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+
+        function goToStep(step) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById(`step${step}`).classList.add('active');
+        }
+    </script>
+</body>
+</html>
