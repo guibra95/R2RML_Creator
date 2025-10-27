@@ -28,6 +28,7 @@
         .column-name { flex: 1; font-weight: bold; }
         .column-ontology-type { flex: 1; margin: 0 10px; }
         .column-pk { margin-left: 10px; }
+        .column-object-property { margin-left: 10px; }
         .column-header { 
             display: flex; 
             font-weight: bold; 
@@ -67,20 +68,24 @@
             <button onclick="goToStep(1)" style="background-color: #6c757d;">← Volver</button>
         </div>
 
-        <!-- Paso 3: Asignacion de las URIs y configuración de columnas -->
-
-        <div style="margin: 20px 0;">
-            <label><strong>URI de Diccionario:</strong></label>
-            <input type="text" id="uri-diccionario" placeholder="Ej: http://ejemplo.org/ontologia#">
-            <label><strong>URI de Datos:</strong></label>
-            <input type="text" id="uri-datos" placeholder="Ej: http://ejemplo.org/datos/">
-        </div>
-
+        <!-- Paso 3: Configuración de columnas y asignación de URIs -->
         <div id="step3" class="step">
             <h1>⚙️ Paso 3: Configuración de Columnas</h1>
             
             <div id="table-info"></div>
             <div id="columns-config"></div>
+
+            <!-- Asignación de URIs (mover aquí) -->
+            <div style="margin: 20px 0;">
+                <label for="uri-diccionario"><strong>URI del Diccionario (prefijo dictionary:)</strong></label>
+                <input type="text" id="uri-diccionario" placeholder="Ej: http://ejemplo.org/dictionary#">
+
+                <label for="uri-localdb"><strong>URI de la Ontología (prefijo localdb:)</strong></label>
+                <input type="text" id="uri-localdb" placeholder="Ej: http://ejemplo.org/localdb#">
+
+                <label for="uri-datos"><strong>URI de Datos (prefijo data:)</strong></label>
+                <input type="text" id="uri-datos" placeholder="Ej: http://ejemplo.org/datos/">
+            </div>
             
             <button onclick="saveConfiguration()">Generar R2RML</button>
             <button onclick="goToStep(2)" style="background-color: #6c757d;">← Volver</button>
@@ -198,6 +203,7 @@
             html += '<div class="column-name">Columna (Tipo MySQL)</div>';
             html += '<div class="column-ontology-type">Tipo Ontología</div>';
             html += '<div class="column-pk">PK</div>';
+            html += '<div class="column-object-property">Propiedad Objeto</div>';
             html += '</div>';
             
             columns.forEach((col, index) => {
@@ -214,6 +220,10 @@
                     <div class="column-pk">
                         <input type="checkbox" id="pk-${index}" ${col.key === 'PRI' ? 'checked' : ''}>
                         <label for="pk-${index}">PK</label>
+                    </div>
+                    <div class="column-object-property">
+                        <input type="checkbox" id="object-property-${index}">
+                        <label for="object-property-${index}">Object Property</label>
                     </div>
                 </div>`;
             });
@@ -248,25 +258,28 @@
             currentColumns.forEach((col, index) => {
                 const ontologyType = document.getElementById(`ontology-type-${index}`).value;
                 const isPK = document.getElementById(`pk-${index}`).checked;
-                
+                const isObjectProperty = document.getElementById(`object-property-${index}`).checked;
+
                 config.columns.push({
                     name: col.name,
                     mysqlType: col.type,
                     ontologyType: ontologyType,
-                    isPrimaryKey: isPK
+                    isPrimaryKey: isPK,
+                    isObjectProperty: isObjectProperty // <-- aquí
                 });
             });
             
             const uriDiccionario = document.getElementById('uri-diccionario').value;
+            const uriLocaldb = document.getElementById('uri-localdb').value;
             const uriDatos = document.getElementById('uri-datos').value;
 
-            // Enviar configuración al servidor para generar R2RML
             fetch('/generate_r2rml', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     config: config,
                     uri_diccionario: uriDiccionario,
+                    uri_localdb: uriLocaldb,
                     uri_datos: uriDatos
                 })
             })

@@ -1,11 +1,12 @@
-from flask import Flask, render_template, request, jsonify
-import sys
 import os
+import sys
+from flask import Flask, render_template, request, jsonify
 
 # Añadir el directorio src al path para importar nuestros módulos
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 from mysql_connector import start_mysql_connexion, connect_to_database, get_tables_structure, get_table_attributes
+from src.R2RML_creator import generate_r2rml_mapping
 
 app = Flask(__name__)
 
@@ -152,76 +153,6 @@ def generate_r2rml():
         
     except Exception as e:
         return jsonify({"success": False, "error": f"Error generando R2RML: {str(e)}"})
-
-def generate_r2rml_mapping(config, uri_diccionario, uri_datos):
-    """Genera el contenido del archivo R2RML basado en la configuración"""
-    table_name = config['table']
-    columns = config['columns']
-    
-    # Obtener columnas PK
-    pk_columns = [col['name'] for col in columns if col['isPrimaryKey']]
-    pk_template = ','.join(['{' + col + '}' for col in pk_columns]) if pk_columns else '{id}'
-    
-    # Prefijos
-    output = f"""
-@prefix rr: <http://www.w3.org/ns/r2rml#> .
-@prefix ex: <{uri_diccionario}> .
-@prefix data: <{uri_datos}> .
-
-"""
-
-    # Mapa principal de la tabla
-    triples_map = f"""# Mapa de triples para la tabla {table_name}
-<#{table_name}Map>
-    rr:logicalTable [ rr:tableName "{table_name}" ] ;
-    rr:subjectMap [
-        rr:template "http://example.org/{table_name}/{pk_template}" ;
-        rr:class ex:{table_name.capitalize()}
-    ] ;
-"""
-
-    # Generar predicate-object maps para cada columna
-    predicate_maps = []
-    for col in columns:
-        col_name = col['name']
-        ontology_type = col['ontologyType']
-        
-        # Determinar el tipo XSD
-        xsd_type = get_xsd_datatype(ontology_type)
-        
-        if xsd_type:
-            predicate_maps.append(f"""    rr:predicateObjectMap [
-        rr:predicate ex:{col_name} ;
-        rr:objectMap [
-            rr:column "{col_name}" ;
-            rr:datatype {xsd_type}
-        ]
-    ]""")
-        else:
-            predicate_maps.append(f"""    rr:predicateObjectMap [
-        rr:predicate ex:{col_name} ;
-        rr:objectMap [ rr:column "{col_name}" ]
-    ]""")
-    
-    # Unir todo
-    if predicate_maps:
-        triples_map += " ;\n".join(predicate_maps) + " ."
-    else:
-        triples_map = triples_map.rstrip(" ;") + " ."
-    
-    return output + triples_map
-
-def get_xsd_datatype(ontology_type):
-    """Mapea tipos de ontología a tipos XSD"""
-    type_mapping = {
-        'string': 'xsd:string',
-        'integer': 'xsd:integer', 
-        'float': 'xsd:decimal',
-        'boolean': 'xsd:boolean',
-        'date': 'xsd:date',
-        'datetime': 'xsd:dateTime'
-    }
-    return type_mapping.get(ontology_type)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
