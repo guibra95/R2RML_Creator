@@ -1,12 +1,12 @@
 import os
 import sys
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 
 # Añadir el directorio src al path para importar nuestros módulos
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 from mysql_connector import start_mysql_connexion, connect_to_database, get_tables_structure, get_table_attributes
-from src.R2RML_creator import generate_r2rml_mapping
+from src.R2RML_creator import generate_data_r2rml, generate_dictionary_r2rml
 
 app = Flask(__name__)
 
@@ -128,31 +128,37 @@ def generate_r2rml():
         data = request.get_json()
         config = data.get('config')
         uri_diccionario = data.get('uri_diccionario')
+        uri_localdb = data.get('uri_localdb')
         uri_datos = data.get('uri_datos')
-        
-        # Generar el R2RML
-        r2rml_content = generate_r2rml_mapping(config, uri_diccionario, uri_datos)
-        
-        # Crear directorio output si no existe
+
+        data_r2rml_content = generate_data_r2rml(config, uri_diccionario, uri_localdb, uri_datos)
+        dictionary_r2rml_content = generate_dictionary_r2rml(config, uri_diccionario, uri_localdb)
+
         output_dir = os.path.join(os.path.dirname(__file__), 'output')
         os.makedirs(output_dir, exist_ok=True)
-        
-        # Guardar archivo R2RML
-        filename = f"{config['table']}_r2rml.ttl"
-        filepath = os.path.join(output_dir, filename)
-        
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(r2rml_content)
-        
+
+        data_filename = f"{config['table']}_data_r2rml.ttl"
+        dictionary_filename = f"{config['table']}_dictionary_r2rml.ttl"
+
+        with open(os.path.join(output_dir, data_filename), 'w', encoding='utf-8') as f:
+            f.write(data_r2rml_content)
+        with open(os.path.join(output_dir, dictionary_filename), 'w', encoding='utf-8') as f:
+            f.write(dictionary_r2rml_content)
+
         return jsonify({
             "success": True,
-            "message": f"Archivo R2RML generado: {filename}",
-            "content": r2rml_content,
-            "filepath": filepath
+            "message": f"Archivos R2RML generados: {data_filename}, {dictionary_filename}",
+            "files": [data_filename, dictionary_filename],
+            "content": {
+                "data_r2rml": data_r2rml_content,
+                "dictionary_r2rml": dictionary_r2rml_content
+            }
         })
-        
     except Exception as e:
         return jsonify({"success": False, "error": f"Error generando R2RML: {str(e)}"})
+
+
+ # ...existing code...
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)

@@ -53,7 +53,6 @@ def generate_r2rml_mapping(config, uri_diccionario, uri_datos):
     predicate_maps = []
     for col in columns:
         col_name = col['name']
-        ontology_type = col['ontologyType']
         property_name = to_property_name(col_name)
         is_object_property = col.get('isObjectProperty', False)
 
@@ -66,17 +65,7 @@ def generate_r2rml_mapping(config, uri_diccionario, uri_datos):
         ]
     ]""")
         else:
-            xsd_type = get_xsd_datatype(ontology_type)
-            if xsd_type:
-                predicate_maps.append(f"""    rr:predicateObjectMap [
-        rr:predicate localdb:{property_name} ;
-        rr:objectMap [
-            rr:column "{col_name}" ;
-            rr:datatype {xsd_type}
-        ]
-    ]""")
-            else:
-                predicate_maps.append(f"""    rr:predicateObjectMap [
+            predicate_maps.append(f"""    rr:predicateObjectMap [
         rr:predicate localdb:{property_name} ;
         rr:objectMap [ rr:column "{col_name}" ]
     ]""")
@@ -98,14 +87,126 @@ def generate_sql_query(table_name, columns):
     # No WHERE, no filtros por tipo, no punto y coma final
     return f"SELECT DISTINCT {col_list} FROM `{table_name}`"
 
-def get_xsd_datatype(ontology_type):
-    """Mapea tipos de ontología a tipos XSD"""
-    type_mapping = {
-        'string': 'xsd:string',
-        'integer': 'xsd:integer', 
-        'float': 'xsd:decimal',
-        'boolean': 'xsd:boolean',
-        'date': 'xsd:date',
-        'datetime': 'xsd:dateTime'
-    }
-    return type_mapping.get(ontology_type)
+    # Eliminada función de mapeo de tipos de ontología
+
+def generate_data_r2rml(config, uri_diccionario, uri_localdb, uri_datos):
+    """
+    Genera el R2RML para los datos clínicos (instancias).
+    Usa localdb para clases y propiedades, data para instancias.
+    """
+    table_name = config['table']
+    columns = config['columns']
+
+    # Normalización de URIs
+    for uri in ['uri_diccionario', 'uri_localdb', 'uri_datos']:
+        val = locals()[uri]
+        if val is None:
+            val = ""
+        val = val.strip()
+        if val and not (val.endswith('/') or val.endswith('#')):
+            val += '/'
+        locals()[uri] = val
+
+    pk_columns = [col['name'] for col in columns if col['isPrimaryKey']]
+    pk_template = '_'.join(['{' + col + '}' for col in pk_columns]) if pk_columns else '{id}'
+    subject_template = f"{uri_datos}{table_name}_{pk_template}"
+    class_name = to_pascal_case(table_name)
+
+    sql_query = generate_sql_query(table_name, columns)
+
+    output = f"""
+@prefix rr: <http://www.w3.org/ns/r2rml#> .
+@prefix dictionary: <{uri_diccionario}> .
+@prefix localdb: <{uri_localdb}> .
+@prefix data: <{uri_datos}> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# SQL para extraer los datos:
+# {sql_query}
+
+# Mapa de triples para la tabla {table_name}
+<#{table_name}Map>
+    rr:logicalTable [
+        rr:sqlQuery \"\"\"{sql_query}\"\"\"
+    ] ;
+    rr:subjectMap [
+        rr:template "{subject_template}" ;
+        rr:class localdb:{class_name}
+    ] ;
+"""
+
+    predicate_maps = []
+    for col in columns:
+        col_name = col['name']
+        property_name = to_property_name(col_name)
+        is_object_property = col.get('isObjectProperty', False)
+
+        if is_object_property:
+            predicate_maps.append(f"""    rr:predicateObjectMap [
+        rr:predicate localdb:{property_name} ;
+        rr:objectMap [
+            rr:template "{class_name}_{{{col_name}}}"
+        ]
+    ]""")
+        else:
+            predicate_maps.append(f"""    rr:predicateObjectMap [
+        rr:predicate localdb:{property_name} ;
+        rr:objectMap [ rr:column "{col_name}" ]
+    ]""")
+
+    if predicate_maps:
+        output += " ;\n".join(predicate_maps) + " .\n"
+    else:
+        output = output.rstrip(" ;") + " .\n"
+
+    return output
+
+def generate_dictionary_r2rml(config, uri_diccionario, uri_localdb):
+    """
+    Genera el R2RML para el diccionario (valores únicos de object properties).
+    Usa dictionary para instancias, localdb para clases y propiedades.
+    """
+    table_name = config['table']
+    columns = config['columns']
+
+    # Normalización de URIs
+    for uri in ['uri_diccionario', 'uri_localdb']:
+        val = locals()[uri]
+        if val is None:
+            val = ""
+        val = val.strip()
+        if val and not (val.endswith('/') or val.endswith('#')):
+            val += '/'
+        locals()[uri] = val
+
+    output = f"""
+@prefix rr: <http://www.w3.org/ns/r2rml#> .
+@prefix dictionary: <{uri_diccionario}> .
+@prefix localdb: <{uri_localdb}> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+"""
+
+    for col in columns:
+        if col.get('isObjectProperty', False):
+            col_name = col['name']
+            class_name = to_pascal_case(col_name)
+            property_name = to_property_name(col_name)
+            sql_query = f"SELECT DISTINCT `{col_name}` FROM `{table_name}`"
+
+            output += f"""# Diccionario para {col_name}
+<#{class_name}DictionaryMap>
+    rr:logicalTable [
+        rr:sqlQuery \"\"\"{sql_query}\"\"\"
+    ] ;
+    rr:subjectMap [
+        rr:template "{class_name}_{{{col_name}}}" ;
+        rr:class dictionary:{class_name}
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate localdb:hasValue ;
+        rr:objectMap [ rr:column "{col_name}" ]
+    ] .
+"""
+
+    return output

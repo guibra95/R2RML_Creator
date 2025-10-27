@@ -26,7 +26,7 @@
             border-radius: 4px; 
         }
         .column-name { flex: 1; font-weight: bold; }
-        .column-ontology-type { flex: 1; margin: 0 10px; }
+    /* .column-ontology-type eliminado: solo R2RML */
         .column-pk { margin-left: 10px; }
         .column-object-property { margin-left: 10px; }
         .column-header { 
@@ -100,8 +100,11 @@
                 <pre id="r2rml-code" style="white-space: pre-wrap; font-family: monospace; font-size: 12px;"></pre>
             </div>
             
-            <button onclick="downloadR2RML()" style="background-color: #28a745;">📥 Descargar Archivo R2RML</button>
+            <button onclick="downloadR2RML('data')" style="background-color: #28a745;">📥 Descargar R2RML Datos</button>
+            <button onclick="downloadR2RML('dictionary')" style="background-color: #17a2b8;">📥 Descargar R2RML Diccionario</button>
             <button onclick="goToStep(1)" style="background-color: #6c757d;">🔄 Nueva Configuración</button>
+            
+            <!-- Eliminado: Botones y campos de descarga de ontologías -->
         </div>
     </div>
 
@@ -201,7 +204,6 @@
             
             let html = '<div class="column-header">';
             html += '<div class="column-name">Columna (Tipo MySQL)</div>';
-            html += '<div class="column-ontology-type">Tipo Ontología</div>';
             html += '<div class="column-pk">PK</div>';
             html += '<div class="column-object-property">Propiedad Objeto</div>';
             html += '</div>';
@@ -209,14 +211,6 @@
             columns.forEach((col, index) => {
                 html += `<div class="column-row">
                     <div class="column-name">${col.name} <small>(${col.type})</small></div>
-                    <select class="column-ontology-type" id="ontology-type-${index}">
-                        <option value="string">String</option>
-                        <option value="integer">Integer</option>
-                        <option value="float">Float</option>
-                        <option value="boolean">Boolean</option>
-                        <option value="date">Date</option>
-                        <option value="datetime">DateTime</option>
-                    </select>
                     <div class="column-pk">
                         <input type="checkbox" id="pk-${index}" ${col.key === 'PRI' ? 'checked' : ''}>
                         <label for="pk-${index}">PK</label>
@@ -232,20 +226,7 @@
             
             // Auto-detectar tipos basado en MySQL
             columns.forEach((col, index) => {
-                const select = document.getElementById(`ontology-type-${index}`);
-                const mysqlType = col.type.toLowerCase();
-                
-                if (mysqlType.includes('int') || mysqlType.includes('tinyint') || mysqlType.includes('bigint')) {
-                    select.value = 'integer';
-                } else if (mysqlType.includes('float') || mysqlType.includes('double') || mysqlType.includes('decimal')) {
-                    select.value = 'float';
-                } else if (mysqlType.includes('date') && !mysqlType.includes('time')) {
-                    select.value = 'date';
-                } else if (mysqlType.includes('datetime') || mysqlType.includes('timestamp')) {
-                    select.value = 'datetime';
-                } else if (mysqlType.includes('tinyint(1)')) {
-                    select.value = 'boolean';
-                }
+                // Eliminado: autoselección de tipos de ontología
             });
         }
 
@@ -256,16 +237,14 @@
             };
             
             currentColumns.forEach((col, index) => {
-                const ontologyType = document.getElementById(`ontology-type-${index}`).value;
                 const isPK = document.getElementById(`pk-${index}`).checked;
                 const isObjectProperty = document.getElementById(`object-property-${index}`).checked;
 
                 config.columns.push({
                     name: col.name,
                     mysqlType: col.type,
-                    ontologyType: ontologyType,
                     isPrimaryKey: isPK,
-                    isObjectProperty: isObjectProperty // <-- aquí
+                    isObjectProperty: isObjectProperty
                 });
             });
             
@@ -286,7 +265,6 @@
             .then(response => response.json())
             .then(result => {
                 if (result.success) {
-                    // Mostrar el resultado
                     showR2RMLResult(result);
                     goToStep(4);
                 } else {
@@ -305,36 +283,44 @@
             infoDiv.innerHTML = `
                 <div class="result success">
                     <strong>✅ ${result.message}</strong>
-                    <p>El archivo R2RML ha sido generado y guardado en el servidor.</p>
-                    <p><strong>Archivo:</strong> ${result.message.split(': ')[1]}</p>
+                    <p>Archivos R2RML generados y guardados en el servidor.</p>
+                    <p><strong>Archivos:</strong> ${result.files.join(', ')}</p>
                 </div>
             `;
             
-            codeDiv.textContent = result.content;
-            
-            // Guardar contenido para descarga
+            codeDiv.textContent = result.content.data_r2rml; // Muestra el principal por defecto
+
+            // Guardar ambos archivos para descarga
             window.currentR2RML = {
-                content: result.content,
-                filename: result.message.split(': ')[1]
+                data: {
+                    content: result.content.data_r2rml,
+                    filename: result.files[0]
+                },
+                dictionary: {
+                    content: result.content.dictionary_r2rml,
+                    filename: result.files[1]
+                }
             };
         }
 
-        function downloadR2RML() {
-            if (!window.currentR2RML) {
+        // Añade dos botones de descarga en el Paso 4:
+        function downloadR2RML(type) {
+            if (!window.currentR2RML || !window.currentR2RML[type]) {
                 alert('No hay contenido R2RML para descargar');
                 return;
             }
-            
-            const blob = new Blob([window.currentR2RML.content], { type: 'text/turtle' });
+            const blob = new Blob([window.currentR2RML[type].content], { type: 'text/turtle' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = window.currentR2RML.filename;
+            a.download = window.currentR2RML[type].filename;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
         }
+
+        // Eliminada función downloadOntology
 
         function goToStep(step) {
             document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
